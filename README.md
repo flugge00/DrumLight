@@ -8,6 +8,9 @@ Built to start with one drum and scale to a few more on the same ESP32.
 See [requirements.md](requirements.md) for the full design (architecture, wiring/power
 plan, BOM, and why the drum count tops out at 4 on one board).
 
+![DrumLight web control panel — demo mode showing four drums, animation modes, presets, and button mapping](docs/screenshots/web-ui-dashboard.png)
+*The web control panel in its built-in offline demo mode (opens automatically when there's no device to connect to) — the real thing looks the same, driven by live data.*
+
 ## Features
 
 - Per-drum mic-based hit detection (envelope follower + threshold + refractory period).
@@ -52,6 +55,14 @@ plan, BOM, and why the drum count tops out at 4 on one board).
    saved to flash when you commit them from the UI.
 4. Save the current look as a preset, or load one of the built-in templates, from the
    Presets panel.
+
+## Wiring
+
+![DrumLight wiring diagram — ESP32, MAX4466 mic, level shifter, WS2812B strip, and the optional control board's buttons](docs/diagrams/wiring-diagram.png)
+
+Reference wiring for one drum plus the optional physical control board, matching the
+pins in `config.h`. Full parts list, power-supply sizing, and wiring-gauge guidance:
+[requirements.md §7–8](requirements.md#7-hardware--bill-of-materials).
 
 ## Configuration
 

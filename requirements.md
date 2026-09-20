@@ -178,6 +178,11 @@ from a phone with no app, router, or internet connection required.
 
 ## 7. Hardware & Bill of Materials
 
+![DrumLight wiring diagram — ESP32, MAX4466 mic, level shifter, WS2812B strip, and the optional control board's buttons](docs/diagrams/wiring-diagram.png)
+
+Reference wiring for Drum 1 plus the optional physical control board, matching
+`config.h`'s pin assignments. SVG source: [docs/diagrams/wiring-diagram.svg](docs/diagrams/wiring-diagram.svg).
+
 | Component | Notes |
 |-----------|-------|
 | ESP32 dev board (e.g. ESP32-DevKitC / NodeMCU-32S) | 1 per group of up to 4 drums |
