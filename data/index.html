@@ -1,0 +1,1283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>DrumLight</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+<style>
+  :root{
+    --bg:#121016;
+    --surface:#1b1720;
+    --surface-2:#241f2b;
+    --border:#3a3441;
+    --text:#f3f0f7;
+    --text-dim:#a39dab;
+    --text-faint:#726c7c;
+    --accent:#ffb02e;
+    --accent-ink:#2b1c00;
+    --cool:#6fd6d1;
+    --hot:#ff5d5d;
+    --good:#63d47a;
+    --focus:#ffb02e;
+    --font-display:"Big Shoulders Display","Arial Narrow","Helvetica Neue",Arial,sans-serif;
+    --font-body:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    --font-mono:"IBM Plex Mono","Cascadia Mono",Consolas,"SFMono-Regular",Menlo,monospace;
+  }
+
+  *{box-sizing:border-box;}
+  /* Flex/grid children default to min-width:auto (content-based), which is
+     the classic cause of rows refusing to shrink/wrap and overflowing the
+     screen on phones. Zero it out everywhere inside the app; elements that
+     need a floor (e.g. the preset-name input) set their own min-width. */
+  .app *{min-width:0;}
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
+  html,body{background:var(--bg);overflow-x:hidden;}
+  body{
+    color:var(--text);
+    font-family:var(--font-body);
+    margin:0;
+    padding-inline:max(20px, env(safe-area-inset-left)) max(20px, env(safe-area-inset-right));
+    padding-block:max(20px, env(safe-area-inset-top)) max(40px, env(safe-area-inset-bottom));
+    overscroll-behavior-y:contain;
+  }
+  h1,h2{font-family:var(--font-display);font-weight:700;margin:0;text-wrap:balance;}
+  button{font-family:var(--font-body);}
+  .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;}
+  a{color:var(--accent);}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
+
+  /* Touch: kill the double-tap-to-zoom / 300ms delay on controls (this is
+     what makes rapid taps on "Test hit" register as a zoom gesture). */
+  button, select, input[type=color], input[type=text], input[type=range]{
+    touch-action:manipulation;
+    -webkit-tap-highlight-color:transparent;
+  }
+
+  .app{max-width:1200px;margin:0 auto;display:flex;flex-direction:column;gap:20px;}
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    display:flex;flex-wrap:wrap;gap:16px 24px;align-items:center;justify-content:space-between;
+    padding:16px 20px;background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  }
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-mark{width:12px;height:12px;border-radius:3px;background:var(--accent);box-shadow:0 0 10px rgba(255,176,46,0.5);flex:none;}
+  .brand h1{font-size:26px;letter-spacing:0.5px;line-height:1;}
+  .brand span.sub{display:block;font-family:var(--font-body);font-size:11px;font-weight:500;letter-spacing:1.2px;text-transform:uppercase;color:var(--text-faint);margin-top:3px;}
+
+  .topbar-controls{display:flex;flex-wrap:wrap;align-items:center;gap:20px;}
+
+  .control-brightness{display:flex;align-items:center;gap:10px;}
+  .control-brightness label{font-size:12px;color:var(--text-dim);white-space:nowrap;}
+  .control-brightness .mono{min-width:2.5em;text-align:right;color:var(--text);font-size:13px;}
+
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:130px;max-width:100%;height:4px;border-radius:2px;
+    background:var(--surface-2);outline-offset:4px;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);
+    border:2px solid var(--bg);cursor:pointer;margin-top:-6px;box-shadow:0 0 0 1px var(--border);
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:var(--surface-2);}
+  input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--bg);cursor:pointer;}
+  input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--surface-2);}
+
+  /* ---------- lights enable switch ---------- */
+  .control-enable{display:flex;align-items:center;gap:10px;}
+  .control-enable label.switch-label{font-size:12px;color:var(--text-dim);white-space:nowrap;}
+  .switch{position:relative;display:inline-block;width:38px;height:22px;flex:none;}
+  .switch input{opacity:0;width:0;height:0;}
+  .switch-track{
+    position:absolute;inset:0;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:999px;cursor:pointer;transition:background .15s,border-color .15s;
+  }
+  .switch-track::before{
+    content:"";position:absolute;width:16px;height:16px;left:2px;top:2px;border-radius:50%;
+    background:var(--text-faint);transition:transform .15s,background .15s;
+  }
+  .switch input:checked + .switch-track{background:rgba(99,212,122,0.18);border-color:rgba(99,212,122,0.5);}
+  .switch input:checked + .switch-track::before{transform:translateX(16px);background:var(--good);}
+  .switch input:focus-visible + .switch-track{outline:2px solid var(--focus);outline-offset:2px;}
+  .control-enable-note{font-size:11px;color:var(--hot);}
+
+  .status{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-dim);padding:6px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface-2);}
+  .status .dot{width:8px;height:8px;border-radius:50%;background:var(--text-faint);flex:none;}
+  .status[data-state="live"] .dot{background:var(--good);box-shadow:0 0 6px rgba(99,212,122,0.6);}
+  .status[data-state="live"]{color:var(--good);}
+  .status[data-state="down"] .dot{background:var(--hot);}
+  .status[data-state="down"]{color:var(--hot);}
+  .status[data-state="demo"] .dot{background:var(--accent);}
+  .status[data-state="demo"]{color:var(--accent);}
+
+  /* ---------- demo banner ---------- */
+  .demo-banner{
+    background:rgba(255,176,46,0.10);
+    border:1px solid rgba(255,176,46,0.35);
+    color:var(--text);
+    border-radius:10px;padding:10px 16px;font-size:13px;line-height:1.5;
+  }
+  .demo-banner strong{color:var(--accent);}
+
+  /* ---------- presets ---------- */
+  .presets{
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:18px;display:flex;flex-direction:column;gap:14px;
+  }
+  .presets-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;}
+  .presets-head h2{font-size:20px;}
+  .presets-save{display:flex;gap:8px;flex-wrap:wrap;}
+  .presets-save input[type=text]{
+    font-family:var(--font-body);font-size:13px;color:var(--text);
+    background:var(--surface-2);border:1px solid var(--border);border-radius:9px;
+    padding:9px 12px;min-width:160px;
+  }
+  .presets-save input[type=text]:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  .presets-save button{
+    background:var(--accent);color:var(--accent-ink);border:none;border-radius:9px;
+    padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;
+    transition:filter .15s, transform .05s;
+  }
+  .presets-save button:hover{filter:brightness(1.08);}
+  .presets-save button:active{transform:scale(0.97);}
+  .presets-save button:disabled{filter:none;opacity:.5;cursor:not-allowed;}
+  .presets-list{display:flex;flex-wrap:wrap;gap:10px;}
+  .presets-empty{font-size:13px;color:var(--text-faint);}
+  .preset-item{
+    display:flex;align-items:stretch;border:1px solid var(--border);border-radius:9px;
+    overflow:hidden;background:var(--surface-2);
+  }
+  .preset-load{
+    background:none;border:none;color:var(--text);font-size:13px;font-weight:600;
+    padding:9px 14px;cursor:pointer;transition:color .15s,background .15s;
+  }
+  .preset-load:hover{color:var(--accent);background:rgba(255,176,46,0.08);}
+  .preset-item[data-active="1"] .preset-load{color:var(--accent);}
+  .preset-delete{
+    background:none;border:none;border-left:1px solid var(--border);color:var(--text-faint);
+    font-size:15px;line-height:1;padding:9px 12px;cursor:pointer;transition:color .15s,background .15s;
+  }
+  .preset-delete:hover{color:var(--hot);background:rgba(255,93,93,0.10);}
+
+  /* ---------- button mapping ---------- */
+  .button-map-list{display:flex;flex-direction:column;gap:10px;}
+  .button-map-item{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);
+  }
+  .button-map-label{font-size:13px;font-weight:600;min-width:90px;}
+  .button-map-select{
+    margin-left:auto;font-family:var(--font-body);font-size:13px;color:var(--text);
+    background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    padding:7px 10px;cursor:pointer;max-width:100%;min-width:0;flex:1 1 160px;
+  }
+  .button-map-select:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+
+  /* ---------- grid & cards ---------- */
+  .grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr));gap:18px;
+  }
+  .card{
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:18px;display:flex;flex-direction:column;gap:16px;
+    transition:border-color .15s ease;
+  }
+  .card[data-flash="1"]{border-color:var(--accent);}
+
+  .card-head{display:flex;align-items:center;gap:12px;}
+  .drum-name{font-size:22px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  input.swatch{
+    -webkit-appearance:none;appearance:none;width:30px;height:30px;border-radius:9px;
+    border:2px solid var(--border);padding:0;background:none;cursor:pointer;flex:none;
+  }
+  input.swatch::-webkit-color-swatch-wrapper{padding:0;}
+  input.swatch::-webkit-color-swatch{border:none;border-radius:7px;}
+  input.swatch::-moz-color-swatch{border:none;border-radius:7px;}
+
+  .saved-pill{
+    font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;
+    color:var(--text-faint);border:1px solid var(--border);border-radius:999px;padding:4px 10px;
+    flex:none;transition:color .2s, border-color .2s, background .2s;
+  }
+  .saved-pill[data-state="saved"]{color:var(--good);border-color:rgba(99,212,122,0.45);background:rgba(99,212,122,0.12);}
+  .saved-pill[data-state="unsaved"]{color:var(--accent);border-color:rgba(255,176,46,0.45);background:rgba(255,176,46,0.12);}
+
+  /* ---------- scope ---------- */
+  .scope-wrap{position:relative;border-radius:10px;overflow:hidden;background:var(--bg);border:1px solid var(--border);}
+  canvas.scope{display:block;width:100%;height:190px;touch-action:none;cursor:ns-resize;}
+  .scope-wrap[data-locked="1"] canvas.scope{touch-action:pan-y;cursor:default;}
+  .scope-hint{
+    position:absolute;top:8px;left:10px;font-size:11px;color:var(--text-faint);
+    background:rgba(18,16,22,0.6);padding:2px 8px;border-radius:6px;
+    pointer-events:none;letter-spacing:.2px;
+  }
+  .scope-lock{
+    position:absolute;top:8px;right:8px;width:28px;height:28px;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(18,16,22,0.6);border:1px solid var(--border);border-radius:8px;
+    color:var(--text-dim);cursor:pointer;padding:0;
+    transition:color .15s,border-color .15s,background .15s;
+  }
+  .scope-lock svg{width:14px;height:14px;display:block;}
+  .scope-lock:hover{color:var(--text);border-color:var(--text-dim);}
+  .scope-lock[data-locked="1"]{color:var(--accent);border-color:rgba(255,176,46,0.5);background:rgba(255,176,46,0.16);}
+
+  /* ---------- sliders ---------- */
+  .sliders{display:flex;flex-direction:column;gap:10px;}
+  .slider-row{display:grid;grid-template-columns:88px minmax(0,1fr) 64px;align-items:center;gap:4px 12px;}
+  .slider-row input[type=range]{width:100%;min-width:0;}
+  .slider-row .value{font-size:13px;text-align:right;color:var(--text);}
+  .slider-row .value .unit{color:var(--text-faint);font-size:11px;margin-left:2px;}
+  .slider-row[hidden], .anim-row[hidden]{display:none;}
+
+  /* Clickable parameter name -> toggles .help-text below it. Looks like the
+     plain label it replaces, plus a small affordance so it reads as tappable. */
+  .param-label{
+    font:inherit;font-size:12px;color:var(--text-dim);background:none;border:none;
+    padding:0;margin:0;text-align:left;cursor:pointer;justify-self:start;
+    border-bottom:1px dotted var(--text-faint);line-height:1.3;
+  }
+  .param-label:hover{color:var(--text);border-bottom-color:var(--text-dim);}
+  .param-label[aria-expanded="true"]{color:var(--accent);border-bottom-color:var(--accent);}
+  .param-label::after{content:" ⓘ";font-size:10px;color:var(--text-faint);}
+
+  .help-text{
+    grid-column:1 / -1;margin:0;padding:8px 10px;font-size:12px;line-height:1.5;
+    color:var(--text-dim);background:var(--surface-2);border:1px solid var(--border);
+    border-radius:8px;
+  }
+
+  /* ---------- animation controls ---------- */
+  .anim-row{display:grid;grid-template-columns:88px minmax(0,1fr);align-items:center;gap:4px 12px;}
+  select.anim-select{
+    width:100%;min-width:0;
+    font-family:var(--font-body);font-size:13px;color:var(--text);
+    background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+    padding:7px 10px;cursor:pointer;
+  }
+  select.anim-select:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+
+  .card-foot{display:flex;justify-content:flex-end;}
+  .test-btn{
+    background:var(--surface-2);color:var(--text);border:1px solid var(--border);
+    border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;
+    transition:background .15s, border-color .15s, transform .05s;
+  }
+  .test-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .test-btn:active{transform:scale(0.97);}
+
+  /* ---------- footer ---------- */
+  .footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:12px;color:var(--text-faint);padding:0 4px;}
+  .footer .mono{color:var(--text-faint);}
+
+  @media (prefers-reduced-motion: reduce){
+    .card{transition:none;}
+  }
+
+  /* Touch devices: bigger hit targets — thumbs/buttons sized for a mouse
+     cursor are too small to grab precisely with a finger. */
+  @media (pointer: coarse){
+    input[type=range]::-webkit-slider-thumb{width:24px;height:24px;margin-top:-10px;}
+    input[type=range]::-moz-range-thumb{width:22px;height:22px;}
+    .test-btn, .preset-load, .preset-delete, .presets-save button, .scope-lock,
+    select.anim-select, .button-map-select{min-height:44px;}
+    .param-label{min-height:32px;display:inline-flex;align-items:center;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>DrumLight</h1>
+        <span class="sub">Trigger &amp; lighting control</span>
+      </div>
+    </div>
+    <div class="topbar-controls">
+      <div class="control-enable">
+        <label class="switch-label" for="lightsEnabled">Lights</label>
+        <label class="switch">
+          <input type="checkbox" id="lightsEnabled" checked />
+          <span class="switch-track"></span>
+        </label>
+        <span class="control-enable-note" id="lightsEnabledNote" hidden></span>
+      </div>
+      <div class="control-brightness">
+        <label for="brightness">Master brightness</label>
+        <input type="range" id="brightness" min="1" max="255" value="180" />
+        <span class="mono" id="brightnessVal">180</span>
+      </div>
+      <div class="status" id="statusPill" data-state="down">
+        <span class="dot"></span>
+        <span id="statusText">Connecting…</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="demoBanner" class="demo-banner" hidden>
+    Showing simulated data — join the <strong>DrumLight</strong> Wi-Fi network and open <span class="mono">192.168.4.1</span> for live readings from your drums.
+  </div>
+
+  <section class="presets">
+    <div class="presets-head">
+      <h2>Templates</h2>
+    </div>
+    <div class="presets-list" id="templatesList"></div>
+  </section>
+
+  <section class="presets">
+    <div class="presets-head">
+      <h2>Buttons</h2>
+    </div>
+    <div class="button-map-list" id="buttonMapList"></div>
+  </section>
+
+  <section class="presets">
+    <div class="presets-head">
+      <h2>Presets</h2>
+      <div class="presets-save">
+        <input type="text" id="presetNameInput" placeholder="Preset name" maxlength="19" readonly />
+        <button type="button" id="presetSaveBtn">Save current look</button>
+      </div>
+    </div>
+    <div class="presets-list" id="presetsList">
+      <span class="presets-empty">No saved presets yet — set up colors &amp; animations below, then save a look.</span>
+    </div>
+  </section>
+
+  <main class="grid" id="drumGrid"></main>
+
+  <footer class="footer">
+    <span id="apInfo" class="mono"></span>
+    <span id="deviceStats" class="mono"></span>
+  </footer>
+</div>
+
+<template id="drumCardTemplate">
+  <article class="card">
+    <div class="card-head">
+      <input type="color" class="swatch" title="Flash color" />
+      <h2 class="drum-name"></h2>
+      <span class="saved-pill" data-state="saved">Saved</span>
+    </div>
+    <div class="scope-wrap">
+      <canvas class="scope"></canvas>
+      <div class="scope-hint">Drag to set threshold</div>
+      <button type="button" class="scope-lock" data-locked="0" aria-pressed="false" title="Lock threshold (prevents accidental drags)"></button>
+    </div>
+    <div class="sliders">
+      <div class="slider-row" data-k="th">
+        <button type="button" class="param-label">Threshold</button>
+        <input type="range" class="slide" min="0" max="2048" step="1" />
+        <span class="value mono"><span class="num"></span></span>
+        <p class="help-text" hidden></p>
+      </div>
+      <div class="slider-row" data-k="r">
+        <button type="button" class="param-label">Refractory</button>
+        <input type="range" class="slide" min="10" max="500" step="5" />
+        <span class="value mono"><span class="num"></span><span class="unit">ms</span></span>
+        <p class="help-text" hidden></p>
+      </div>
+      <div class="slider-row" data-k="f">
+        <button type="button" class="param-label">Flash</button>
+        <input type="range" class="slide" min="20" max="1000" step="10" />
+        <span class="value mono"><span class="num"></span><span class="unit">ms</span></span>
+        <p class="help-text" hidden></p>
+      </div>
+      <div class="anim-row">
+        <button type="button" class="param-label">Animation</button>
+        <select class="anim-select">
+          <option value="0">Flash</option>
+          <option value="1">Chase (circle)</option>
+          <option value="2">Rainbow</option>
+          <option value="3">Color cycle</option>
+          <option value="4">Chase (double)</option>
+          <option value="5">Chase (persist)</option>
+          <option value="6">Chase (double + persist)</option>
+          <option value="7">Ember glow</option>
+          <option value="8">Sparkle field</option>
+          <option value="9">Ripple</option>
+          <option value="10">Strobe burst</option>
+        </select>
+        <p class="help-text" hidden></p>
+      </div>
+      <div class="slider-row" data-k="as">
+        <button type="button" class="param-label">Anim speed</button>
+        <input type="range" class="slide" min="40" max="8000" step="20" />
+        <span class="value mono"><span class="num"></span><span class="unit">ms</span></span>
+        <p class="help-text" hidden></p>
+      </div>
+      <div class="slider-row" data-k="al">
+        <button type="button" class="param-label">Chase length</button>
+        <input type="range" class="slide" min="1" max="60" step="1" />
+        <span class="value mono"><span class="num"></span><span class="unit">px</span></span>
+        <p class="help-text" hidden></p>
+      </div>
+    </div>
+    <div class="card-foot">
+      <button type="button" class="test-btn">Test hit</button>
+    </div>
+  </article>
+</template>
+
+<template id="presetItemTemplate">
+  <div class="preset-item">
+    <button type="button" class="preset-load"></button>
+    <button type="button" class="preset-delete" title="Delete preset" aria-label="Delete preset">&times;</button>
+  </div>
+</template>
+
+<template id="templateItemTemplate">
+  <div class="preset-item">
+    <button type="button" class="preset-load"></button>
+  </div>
+</template>
+
+<template id="buttonMapItemTemplate">
+  <div class="button-map-item">
+    <span class="button-map-label"></span>
+    <select class="button-map-select"></select>
+  </div>
+</template>
+
+<script>
+(function(){
+  "use strict";
+
+  const HISTORY_MS = 6000;          // how much waveform history to keep
+  const SEND_THROTTLE_MS = 60;      // min gap between "set" messages while dragging
+
+  const grid = document.getElementById("drumGrid");
+  const template = document.getElementById("drumCardTemplate");
+  const statusPill = document.getElementById("statusPill");
+  const statusText = document.getElementById("statusText");
+  const demoBanner = document.getElementById("demoBanner");
+  const apInfo = document.getElementById("apInfo");
+  const deviceStats = document.getElementById("deviceStats");
+  const brightnessInput = document.getElementById("brightness");
+  const brightnessVal = document.getElementById("brightnessVal");
+  const lightsEnabledInput = document.getElementById("lightsEnabled");
+  const lightsEnabledNote = document.getElementById("lightsEnabledNote");
+  const presetsListEl = document.getElementById("presetsList");
+  const presetNameInput = document.getElementById("presetNameInput");
+  const presetSaveBtn = document.getElementById("presetSaveBtn");
+  const presetItemTemplate = document.getElementById("presetItemTemplate");
+  const templatesListEl = document.getElementById("templatesList");
+  const templateItemTemplate = document.getElementById("templateItemTemplate");
+  const buttonMapListEl = document.getElementById("buttonMapList");
+  const buttonMapItemTemplate = document.getElementById("buttonMapItemTemplate");
+
+  const MAX_PRESETS = 8;
+  // Mirrors config.h's PRESET_TEMPLATES, so the panel is explorable in demo
+  // mode too (no device). Keep these two lists in sync by hand.
+  const DEMO_TEMPLATES = [
+    {idx:0, name:"Classic Flash",  drums:{0:{c:"#ff0000", am:0, as:1500, al:10, f:200}}},
+    {idx:1, name:"Ring Chase",     drums:{0:{c:"#ff4500", am:6, as:350,  al:14, f:150}}},
+    {idx:2, name:"Rainbow Glow",   drums:{0:{c:"#ffffff", am:2, as:4000, al:10, f:200}}},
+    {idx:3, name:"Ember Pulse",    drums:{0:{c:"#ff4500", am:7, as:2500, al:15, f:450}}},
+    {idx:4, name:"Strobe Hit",     drums:{0:{c:"#ffffff", am:10,as:60,   al:0,  f:250}}},
+  ];
+
+  // Static, mode-independent help for the two hit-detection sliders.
+  const STATIC_HELP = {
+    th: "How loud a hit must be (envelope level) to trigger this drum. Drag the dashed line on the graph above, or use this slider.",
+    r: "Minimum time after a hit before the next one can trigger, so one hit can't re-trigger itself while it's still ringing out.",
+  };
+
+  // Defaults each param falls back to when a mode doesn't override them —
+  // these match the static ranges baked into drumCardTemplate above.
+  const DEFAULT_PARAM = {
+    f:  { label:"Flash",       unit:"ms", min:20, max:1000, step:10 },
+    as: { label:"Anim speed",  unit:"ms", min:40,  max:8000, step:20 },
+    al: { label:"Chase length",unit:"px", min:1,   max:60,   step:1 },
+  };
+  const FIELD_NAME = { th:"threshold", r:"refractoryMs", f:"flashMs", as:"animSpeedMs", al:"animLength" };
+
+  // Per-AnimMode parameter relevance, labels/units/ranges, and help text.
+  // Index matches config.h's AnimMode enum — keep the two in sync by hand.
+  // A param key absent from `params` means it does nothing in that mode and
+  // its whole row is hidden.
+  const ANIM_META = [
+    { name:"Flash", colorRelevant:true, // 0
+      description:"Solid color that snaps on at full brightness on a hit, then fades linearly to black.",
+      params:{ f:{ help:"How long the flash takes to fade from full brightness to black after a hit." } } },
+    { name:"Chase (circle)", colorRelevant:true, // 1
+      description:"Off until a hit, then a single comet sweeps once around the strip and stops.",
+      params:{
+        as:{ help:"How long the comet takes to sweep once around the whole strip." },
+        al:{ capToLed:true, help:"Length of the comet's fading tail, in pixels." },
+      } },
+    { name:"Rainbow", colorRelevant:false, // 2
+      colorNote:"this mode always shows a rotating rainbow instead of a fixed color.",
+      description:"A rainbow band continuously rotates around the strip; a hit briefly boosts overall brightness.",
+      params:{
+        f:{ help:"How long the brightness boost from a hit takes to fade back to the ambient rainbow." },
+        as:{ help:"How long one full rainbow rotation across the strip takes." },
+      } },
+    { name:"Color cycle", colorRelevant:true, // 3
+      colorNote:"used as the starting hue, which then continuously shifts.",
+      description:"The configured color's hue slowly rotates (breathing); a hit briefly boosts brightness.",
+      params:{
+        f:{ help:"How long the brightness boost from a hit takes to fade back to the ambient breathing color." },
+        as:{ help:"How long one full hue rotation (breathing cycle) takes." },
+      } },
+    { name:"Chase (double)", colorRelevant:true, // 4
+      description:"Off until a hit, then two comets launch together and sweep to meet at the far side.",
+      params:{
+        as:{ help:"How long the two comets take to travel from the start to meeting at the far side." },
+        al:{ capToLed:true, help:"Length of each comet's fading tail, in pixels." },
+      } },
+    { name:"Chase (persist)", colorRelevant:true, // 5
+      description:"A single sweep lights the strip solid pixel by pixel; once lit, the whole strip fades out together.",
+      params:{
+        f:{ help:"After the sweep finishes and the whole strip is lit, how long it takes to fade out together." },
+        as:{ help:"How long the sweep takes to light the whole strip." },
+      } },
+    { name:"Chase (double + persist)", colorRelevant:true, // 6
+      description:"Two sweeps light the strip solid from the start outward; once both finish, the whole strip fades out together.",
+      params:{
+        f:{ help:"After both sweeps finish and the whole strip is lit, how long it takes to fade out together." },
+        as:{ help:"How long the two sweeps take to light the whole strip." },
+      } },
+    { name:"Ember glow", colorRelevant:true, // 7
+      description:"The strip rests at a dim breathing glow; a hit flares it to full brightness and it decays back down to the glow.",
+      params:{
+        f:{ help:"How long a hit's bright flare takes to decay back down to the resting glow." },
+        as:{ help:"How long one full breathe cycle of the resting glow takes." },
+        al:{ label:"Glow level", unit:"%", min:1, max:100, step:1, help:"How bright the resting glow is between hits, as a percent of full brightness." },
+      } },
+    { name:"Sparkle field", colorRelevant:true, // 8
+      description:"Sparse random twinkles at rest; a hit bursts into a denser, brighter shower of sparkles that settles back down.",
+      params:{
+        f:{ help:"How long the burst of extra sparkles from a hit takes to settle back to the idle twinkle." },
+        as:{ label:"Twinkle rate", min:40, max:2000, step:20, help:"How often a new sparkle can appear — lower is busier." },
+        al:{ label:"Density", unit:"%", min:1, max:100, step:1, help:"How many sparkles twinkle at rest, as a percent chance per twinkle tick." },
+      } },
+    { name:"Ripple", colorRelevant:true, // 9
+      description:"The strip rests at a dim base glow; each hit sends a bright band traveling out from the center to both ends.",
+      params:{
+        f:{ label:"Afterglow", help:"How long a pixel takes to fade from full brightness back to the base glow after the wave passes it." },
+        as:{ help:"How long the wave takes to travel from the center out to the ends of the strip." },
+        al:{ label:"Wave width", capToLed:true, help:"Width of the wave's bright leading band, in pixels." },
+      } },
+    { name:"Strobe burst", colorRelevant:true, // 10
+      description:"Off between hits; a hit fires a rapid multi-flash strobe burst instead of one smooth decay.",
+      params:{
+        f:{ help:"Total length of the strobe burst after a hit, in milliseconds." },
+        as:{ label:"Strobe rate", min:40, max:500, step:10, help:"Length of one on+off strobe cycle — lower flickers faster." },
+      } },
+  ];
+  // Mirrors config.h's PRESET_BUTTON_DEFAULTS, so the panel is explorable in
+  // demo mode too (no device). Keep in sync by hand.
+  const DEMO_BUTTON_MAP = [
+    {index:0, wired:true,  kind:1, id:0},
+    {index:1, wired:true,  kind:1, id:1},
+    {index:2, wired:true,  kind:1, id:2},
+    {index:3, wired:false, kind:0, id:0},
+    {index:4, wired:false, kind:0, id:0},
+  ];
+  const BTN_NONE = 0, BTN_TEMPLATE = 1, BTN_PRESET = 2;
+  // Coarse pointer (touch) devices default the scope threshold to locked, so
+  // a normal finger swipe scrolls the page instead of being captured by the
+  // canvas drag handler. Users can tap the lock icon to unlock and adjust.
+  const IS_TOUCH = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  const drums = new Map();
+  let presets = []; // [{slot, name}]
+  let templates = []; // [{idx, name}]
+  let buttonMap = []; // [{index, wired, kind, id}]
+  let ws = null;
+  let sendGuard = 0;
+
+  function setStatus(state, text){
+    statusPill.dataset.state = state;
+    statusText.textContent = text;
+  }
+
+  const LOCK_ICON_OPEN = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7"/></svg>';
+  const LOCK_ICON_CLOSED = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.4"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>';
+
+  // Shows/hides f/as/al depending on which params the current AnimMode
+  // actually uses, relabels+reranges them for modes that repurpose a field
+  // (e.g. "Chase length" px -> "Glow level" %), refreshes all help text, and
+  // notes on the color swatch when the current mode ignores color.
+  function applyAnimMeta(state){
+    const meta = ANIM_META[state.animMode] || ANIM_META[0];
+    state.animLabel.textContent = "Animation";
+    state.animHelp.textContent = `${meta.name}: ${meta.description}`;
+
+    ["f","as","al"].forEach(k=>{
+      const entry = meta.params[k];
+      const { row, input, num, unit, label, help } = state.rows[k];
+      if(!entry){
+        row.hidden = true;
+        return;
+      }
+      row.hidden = false;
+      const base = DEFAULT_PARAM[k];
+      label.textContent = entry.label || base.label;
+      if(unit) unit.textContent = entry.unit !== undefined ? entry.unit : base.unit;
+      help.textContent = entry.help;
+
+      let max = entry.max !== undefined ? entry.max : base.max;
+      if(k === "al" && entry.capToLed) max = Math.min(max, state.ledCount);
+      const min = entry.min !== undefined ? entry.min : base.min;
+      const step = entry.step !== undefined ? entry.step : base.step;
+      input.min = min; input.max = max; input.step = step;
+
+      const clamped = Math.min(max, Math.max(min, Number(input.value)));
+      input.value = clamped;
+      num.textContent = clamped;
+      if(clamped !== state[FIELD_NAME[k]]){
+        state[FIELD_NAME[k]] = clamped;
+        send({type:"set", i:state.id, k, v:clamped});
+        send({type:"commit", i:state.id});
+      }
+    });
+
+    state.swatch.title = meta.colorRelevant
+      ? "Flash color"
+      : `Color — not used by ${meta.name}: ${meta.colorNote || "this animation ignores the color setting"}`;
+    state.swatch.style.opacity = meta.colorRelevant ? "1" : "0.4";
+  }
+
+  function buildCard(d){
+    const node = template.content.firstElementChild.cloneNode(true);
+    node.dataset.id = d.i;
+    node.querySelector(".drum-name").textContent = d.n;
+    const swatch = node.querySelector(".swatch");
+    swatch.value = d.c;
+    const canvas = node.querySelector("canvas.scope");
+    const savedPill = node.querySelector(".saved-pill");
+    const scopeWrap = node.querySelector(".scope-wrap");
+    const scopeHint = node.querySelector(".scope-hint");
+    const lockBtn = node.querySelector(".scope-lock");
+
+    const rows = {};
+    node.querySelectorAll(".slider-row").forEach(row=>{
+      const k = row.dataset.k;
+      rows[k] = {
+        row, input: row.querySelector("input"), num: row.querySelector(".num"),
+        unit: row.querySelector(".unit"), label: row.querySelector(".param-label"),
+        help: row.querySelector(".help-text"),
+      };
+    });
+    rows.th.input.value = d.th; rows.th.num.textContent = d.th;
+    rows.r.input.value = d.r;   rows.r.num.textContent = d.r;
+    rows.f.input.value = d.f;   rows.f.num.textContent = d.f;
+    rows.as.input.value = d.as || 1500; rows.as.num.textContent = rows.as.input.value;
+    const ledCount = d.lc || 60;
+    rows.al.input.max = ledCount;
+    rows.al.input.value = Math.min(d.al || 10, ledCount);
+    rows.al.num.textContent = rows.al.input.value;
+    rows.th.help.textContent = STATIC_HELP.th;
+    rows.r.help.textContent = STATIC_HELP.r;
+
+    const animSelect = node.querySelector(".anim-select");
+    animSelect.value = String(d.am || 0);
+    const animRow = node.querySelector(".anim-row");
+    const animLabel = animRow.querySelector(".param-label");
+    const animHelp = animRow.querySelector(".help-text");
+
+    const state = {
+      id: d.i, name: d.n, color: d.c,
+      threshold: d.th, refractoryMs: d.r, flashMs: d.f,
+      animMode: d.am || 0, animSpeedMs: d.as || 1500, animLength: d.al || 10,
+      ledCount,
+      maxAdc: d.maxAdc || 4095,
+      history: [],
+      lastHitSeq: null,
+      yMax: 300,
+      node, canvas, ctx: canvas.getContext("2d"),
+      rows, swatch, savedPill, animSelect, animRow, animLabel, animHelp,
+      dirty: false,
+      locked: false,
+    };
+
+    // Clicking a parameter's name toggles a short explanation of what it
+    // does — especially useful since f/as/al are repurposed per AnimMode
+    // (see ANIM_META). Only one help panel stays open per card at a time.
+    const helpPairs = [rows.th, rows.r, rows.f, rows.as, rows.al,
+      {label: animLabel, help: animHelp}];
+    helpPairs.forEach(({label, help})=>{
+      label.setAttribute("aria-expanded", "false");
+      label.addEventListener("click", ()=>{
+        const opening = help.hidden;
+        helpPairs.forEach(p=>{
+          if(p.help !== help){ p.help.hidden = true; p.label.setAttribute("aria-expanded","false"); }
+        });
+        help.hidden = !opening;
+        label.setAttribute("aria-expanded", String(opening));
+      });
+    });
+
+    applyAnimMeta(state);
+
+    function setLocked(locked){
+      state.locked = locked;
+      lockBtn.dataset.locked = locked ? "1" : "0";
+      lockBtn.setAttribute("aria-pressed", String(locked));
+      lockBtn.title = locked ? "Unlock threshold" : "Lock threshold (prevents accidental drags)";
+      lockBtn.innerHTML = locked ? LOCK_ICON_CLOSED : LOCK_ICON_OPEN;
+      scopeWrap.dataset.locked = locked ? "1" : "0";
+      scopeHint.textContent = locked ? "Locked" : "Drag to set threshold";
+    }
+    setLocked(IS_TOUCH);
+    lockBtn.addEventListener("click", ()=> setLocked(!state.locked));
+
+    function markSaved(){
+      state.dirty = false;
+      savedPill.dataset.state = "saved";
+      savedPill.textContent = "Saved";
+    }
+    function markUnsaved(){
+      state.dirty = true;
+      savedPill.dataset.state = "unsaved";
+      savedPill.textContent = "Unsaved";
+    }
+
+    swatch.addEventListener("input", ()=>{
+      state.color = swatch.value;
+      send({type:"set", i:d.i, k:"c", v:swatch.value});
+      markUnsaved();
+    });
+    swatch.addEventListener("change", ()=>{ send({type:"commit", i:d.i}); });
+
+    function wireSlider(k, field){
+      const {input, num} = rows[k];
+      input.addEventListener("input", ()=>{
+        const v = Number(input.value);
+        state[field] = v;
+        num.textContent = v;
+        throttledSend({type:"set", i:d.i, k, v});
+        markUnsaved();
+      });
+      input.addEventListener("change", ()=>{ send({type:"commit", i:d.i}); });
+    }
+    wireSlider("th","threshold");
+    wireSlider("r","refractoryMs");
+    wireSlider("f","flashMs");
+    wireSlider("as","animSpeedMs");
+    wireSlider("al","animLength");
+
+    animSelect.addEventListener("change", ()=>{
+      const v = Number(animSelect.value);
+      state.animMode = v;
+      send({type:"set", i:d.i, k:"am", v});
+      send({type:"commit", i:d.i});
+      markUnsaved();
+      applyAnimMeta(state);
+    });
+
+    node.querySelector(".test-btn").addEventListener("click", ()=>{
+      send({type:"hit", i:d.i});
+      flashCard(state);
+    });
+
+    wireScopeDrag(state, markUnsaved);
+
+    node.__markSaved = markSaved;
+    return { node, state };
+  }
+
+  function throttledSend(msg){
+    const now = performance.now();
+    if(now - sendGuard < SEND_THROTTLE_MS) return;
+    sendGuard = now;
+    send(msg);
+  }
+
+  function send(msg){
+    if(ws && ws.readyState === WebSocket.OPEN){
+      ws.send(JSON.stringify(msg));
+    } else {
+      applyLocal(msg); // demo mode: keep the UI responsive without a device
+    }
+  }
+
+  function applyLocal(msg){
+    if(msg.type === "set"){
+      const s = drums.get(msg.i);
+      if(!s) return;
+      if(msg.k === "th") s.threshold = msg.v;
+      if(msg.k === "r") s.refractoryMs = msg.v;
+      if(msg.k === "f") s.flashMs = msg.v;
+      if(msg.k === "c") s.color = msg.v;
+      if(msg.k === "am") s.animMode = msg.v;
+      if(msg.k === "as") s.animSpeedMs = msg.v;
+      if(msg.k === "al") s.animLength = msg.v;
+    } else if(msg.type === "commit"){
+      const s = drums.get(msg.i);
+      if(s && s.node.__markSaved) s.node.__markSaved();
+    } else if(msg.type === "hit"){
+      const s = drums.get(msg.i);
+      if(s) triggerDemoHit(s);
+    } else if(msg.type === "savePreset"){
+      // No real device in demo mode: fake persistence in memory so the
+      // preset UI is still fully explorable.
+      let entry = presets.find(p => p.name === msg.name);
+      if(!entry){
+        const used = new Set(presets.map(p => p.slot));
+        let slot = 0;
+        while(used.has(slot) && slot < MAX_PRESETS) slot++;
+        if(slot >= MAX_PRESETS) return;
+        entry = {slot, name: msg.name};
+        presets.push(entry);
+      }
+      entry.snapshot = snapshotDrums();
+      renderPresets();
+    } else if(msg.type === "loadPreset"){
+      const entry = presets.find(p => p.slot === msg.slot);
+      if(entry && entry.snapshot) applyPresetSnapshot(entry.snapshot);
+    } else if(msg.type === "deletePreset"){
+      presets = presets.filter(p => p.slot !== msg.slot);
+      renderPresets();
+    } else if(msg.type === "loadTemplate"){
+      const tpl = DEMO_TEMPLATES.find(t => t.idx === msg.idx);
+      if(tpl) applyPresetSnapshot(tpl.drums);
+    } else if(msg.type === "setButtonTarget"){
+      const b = buttonMap.find(b => b.index === msg.index);
+      if(b){ b.kind = msg.kind; b.id = msg.id; renderButtonMap(); }
+    } else if(msg.type === "setEnabled"){
+      updatePowerUi({wired:false, physOn:true, en: msg.v});
+    }
+  }
+
+  // Reflects the combined physical-switch + software-toggle state: the
+  // checkbox always shows/drives the software side, and a note explains
+  // when a wired physical switch is currently forcing lights off (it wins
+  // over the software toggle either way).
+  function updatePowerUi(power){
+    if(!power) return;
+    lightsEnabledInput.checked = !!power.en;
+    if(power.wired && !power.physOn){
+      lightsEnabledNote.hidden = false;
+      lightsEnabledNote.textContent = "Physical switch is off";
+    } else {
+      lightsEnabledNote.hidden = true;
+    }
+  }
+
+  function snapshotDrums(){
+    const snap = {};
+    for(const [id, s] of drums) snap[id] = {c: s.color, am: s.animMode, as: s.animSpeedMs, al: s.animLength, f: s.flashMs};
+    return snap;
+  }
+
+  function applyPresetSnapshot(snap){
+    for(const [id, s] of drums){
+      const d = snap[id];
+      if(!d) continue;
+      s.color = d.c; s.animMode = d.am; s.animSpeedMs = d.as; s.animLength = d.al; s.flashMs = d.f;
+      s.swatch.value = d.c;
+      s.animSelect.value = String(d.am);
+      s.rows.f.input.value = d.f;   s.rows.f.num.textContent = d.f;
+      s.rows.as.input.value = d.as; s.rows.as.num.textContent = d.as;
+      s.rows.al.input.value = Math.min(d.al, s.ledCount); s.rows.al.num.textContent = s.rows.al.input.value;
+      applyAnimMeta(s);
+      if(s.node.__markSaved) s.node.__markSaved();
+    }
+  }
+
+  function renderPresets(){
+    presetsListEl.innerHTML = "";
+    if(presets.length === 0){
+      const empty = document.createElement("span");
+      empty.className = "presets-empty";
+      empty.textContent = "No saved presets yet — set up colors & animations below, then save a look.";
+      presetsListEl.appendChild(empty);
+      return;
+    }
+    presets.slice().sort((a,b)=>a.slot-b.slot).forEach(p=>{
+      const node = presetItemTemplate.content.firstElementChild.cloneNode(true);
+      node.querySelector(".preset-load").textContent = p.name;
+      node.querySelector(".preset-load").addEventListener("click", ()=>{
+        send({type:"loadPreset", slot:p.slot});
+      });
+      node.querySelector(".preset-delete").addEventListener("click", (e)=>{
+        e.stopPropagation();
+        if(!confirm(`Delete preset "${p.name}"?`)) return;
+        send({type:"deletePreset", slot:p.slot});
+      });
+      presetsListEl.appendChild(node);
+    });
+    renderButtonMap(); // option list depends on preset names
+  }
+
+  function renderTemplates(){
+    templatesListEl.innerHTML = "";
+    templates.slice().sort((a,b)=>a.idx-b.idx).forEach(t=>{
+      const node = templateItemTemplate.content.firstElementChild.cloneNode(true);
+      node.querySelector(".preset-load").textContent = t.name;
+      node.querySelector(".preset-load").addEventListener("click", ()=>{
+        send({type:"loadTemplate", idx:t.idx});
+      });
+      templatesListEl.appendChild(node);
+    });
+    renderButtonMap(); // option list depends on template names
+  }
+
+  function renderButtonMap(){
+    buttonMapListEl.innerHTML = "";
+    const wired = buttonMap.filter(b => b.wired);
+    if(wired.length === 0){
+      const empty = document.createElement("span");
+      empty.className = "presets-empty";
+      empty.textContent = "No buttons wired — set PRESET_BUTTON_PINS in config.h to add some.";
+      buttonMapListEl.appendChild(empty);
+      return;
+    }
+    wired.sort((a,b)=>a.index-b.index).forEach(b=>{
+      const node = buttonMapItemTemplate.content.firstElementChild.cloneNode(true);
+      node.querySelector(".button-map-label").textContent = `Button ${b.index + 1}`;
+
+      const select = node.querySelector(".button-map-select");
+      const noneOpt = document.createElement("option");
+      noneOpt.value = `${BTN_NONE}:0`;
+      noneOpt.textContent = "None";
+      select.appendChild(noneOpt);
+
+      templates.slice().sort((a,b)=>a.idx-b.idx).forEach(t=>{
+        const opt = document.createElement("option");
+        opt.value = `${BTN_TEMPLATE}:${t.idx}`;
+        opt.textContent = `Template: ${t.name}`;
+        select.appendChild(opt);
+      });
+      presets.slice().sort((a,b)=>a.slot-b.slot).forEach(p=>{
+        const opt = document.createElement("option");
+        opt.value = `${BTN_PRESET}:${p.slot}`;
+        opt.textContent = `Preset: ${p.name}`;
+        select.appendChild(opt);
+      });
+
+      select.value = `${b.kind}:${b.id}`;
+      if(select.value === "") select.value = `${BTN_NONE}:0`; // stale target (e.g. a deleted preset)
+
+      select.addEventListener("change", ()=>{
+        const [kind, id] = select.value.split(":").map(Number);
+        send({type:"setButtonTarget", index:b.index, kind, id});
+        b.kind = kind; b.id = id;
+      });
+
+      buttonMapListEl.appendChild(node);
+    });
+  }
+
+  presetSaveBtn.addEventListener("click", ()=>{
+    const name = presetNameInput.value.trim();
+    if(!name){
+      presetNameInput.removeAttribute("readonly"); // genuine user click -> ok to unlock now
+      presetNameInput.focus();
+      return;
+    }
+    send({type:"savePreset", name});
+    presetNameInput.value = "";
+  });
+  // Loads readonly (see the attribute in HTML) so captive-portal browsers on
+  // iOS/Android — which auto-focus the first text field on a "sign in to
+  // network" page, popping the keyboard immediately — can't type into it.
+  // Dropping readonly on the first real tap/click, before focus lands,
+  // makes it behave like a normal field for an actual user interaction.
+  presetNameInput.addEventListener("pointerdown", ()=>{
+    presetNameInput.removeAttribute("readonly");
+  }, { once: true });
+  presetNameInput.addEventListener("keydown", (e)=>{
+    if(e.key === "Enter") presetSaveBtn.click();
+  });
+
+  function flashCard(state){
+    state.node.dataset.flash = "1";
+    clearTimeout(state._flashTimer);
+    state._flashTimer = setTimeout(()=>{ state.node.dataset.flash = "0"; }, 180);
+  }
+
+  function wireScopeDrag(state, markUnsaved){
+    const canvas = state.canvas;
+    let dragging = false;
+
+    function valueFromY(clientY){
+      const rect = canvas.getBoundingClientRect();
+      const y = Math.min(Math.max(clientY - rect.top, 0), rect.height);
+      const frac = 1 - (y / rect.height);
+      return Math.round(frac * state.yMax);
+    }
+
+    function apply(clientY, commit){
+      const v = Math.max(0, valueFromY(clientY));
+      state.threshold = v;
+      state.rows.th.input.value = v;
+      state.rows.th.num.textContent = v;
+      throttledSend({type:"set", i:state.id, k:"th", v});
+      markUnsaved();
+      if(commit) send({type:"commit", i:state.id});
+    }
+
+    canvas.addEventListener("pointerdown", (e)=>{
+      if(state.locked) return;
+      dragging = true;
+      canvas.setPointerCapture(e.pointerId);
+      apply(e.clientY, false);
+    });
+    canvas.addEventListener("pointermove", (e)=>{ if(dragging) apply(e.clientY, false); });
+    canvas.addEventListener("pointerup", (e)=>{
+      if(!dragging) return;
+      dragging = false;
+      apply(e.clientY, true);
+    });
+    canvas.addEventListener("pointercancel", ()=>{ dragging = false; });
+  }
+
+  function ensureCanvasSize(state){
+    const canvas = state.canvas;
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(rect.width * dpr));
+    const h = Math.max(1, Math.round(rect.height * dpr));
+    if(canvas.width !== w || canvas.height !== h){ canvas.width = w; canvas.height = h; }
+  }
+
+  const COOL = "#6fd6d1";
+  const HOT = "#ff5d5d";
+  const GRID = "rgba(255,255,255,0.06)";
+  const AXIS_TEXT = "#726c7c";
+
+  function drawScope(state){
+    ensureCanvasSize(state);
+    const ctx = state.ctx;
+    const W = state.canvas.width, H = state.canvas.height;
+    ctx.clearRect(0,0,W,H);
+
+    const now = performance.now();
+    const hist = state.history.filter(p => now - p.t <= HISTORY_MS);
+    state.history = hist;
+
+    let maxSeen = state.threshold * 1.15;
+    for(const p of hist) if(p.env > maxSeen) maxSeen = p.env;
+    const ceiling = Math.min(state.maxAdc/2, Math.max(300, maxSeen * 1.15));
+    state.yMax = ceiling;
+
+    const yFor = (v)=> H - (v/ceiling) * H;
+    const xFor = (t)=> W - ((now - t)/HISTORY_MS) * W;
+
+    ctx.strokeStyle = GRID;
+    ctx.lineWidth = 1;
+    ctx.font = `${Math.round(11*(window.devicePixelRatio||1))}px "IBM Plex Mono", monospace`;
+    ctx.fillStyle = AXIS_TEXT;
+    ctx.textBaseline = "middle";
+    [0.25,0.5,0.75,1].forEach(f=>{
+      const y = H - f*H;
+      ctx.beginPath();
+      ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+      ctx.fillText(Math.round(ceiling*f), 6, y - 8);
+    });
+
+    for(const p of hist){
+      if(!p.hit) continue;
+      const x = xFor(p.t);
+      ctx.fillStyle = state.color;
+      ctx.globalAlpha = 0.22;
+      ctx.fillRect(x-1, 0, 3, H);
+      ctx.globalAlpha = 1;
+    }
+
+    if(hist.length > 1){
+      ctx.beginPath();
+      ctx.moveTo(xFor(hist[0].t), H);
+      for(const p of hist) ctx.lineTo(xFor(p.t), yFor(p.env));
+      ctx.lineTo(xFor(hist[hist.length-1].t), H);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0,0,0,H);
+      grad.addColorStop(0, "rgba(111,214,209,0.35)");
+      grad.addColorStop(1, "rgba(111,214,209,0.02)");
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      ctx.beginPath();
+      let started = false;
+      for(const p of hist){
+        const x = xFor(p.t), y = yFor(p.env);
+        if(!started){ ctx.moveTo(x,y); started = true; } else ctx.lineTo(x,y);
+      }
+      ctx.strokeStyle = COOL;
+      ctx.lineWidth = 2 * (window.devicePixelRatio||1);
+      ctx.lineJoin = "round";
+      ctx.stroke();
+
+      const last = hist[hist.length-1];
+      ctx.fillStyle = last.env >= state.threshold ? HOT : COOL;
+      ctx.beginPath();
+      ctx.arc(xFor(last.t), yFor(last.env), 3.5*(window.devicePixelRatio||1), 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    const ty = yFor(state.threshold);
+    ctx.setLineDash([6*(window.devicePixelRatio||1), 5*(window.devicePixelRatio||1)]);
+    ctx.strokeStyle = "#ffb02e";
+    ctx.lineWidth = 1.5 * (window.devicePixelRatio||1);
+    ctx.beginPath();
+    ctx.moveTo(0, ty); ctx.lineTo(W, ty); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = "#ffb02e";
+    ctx.textAlign = "right";
+    ctx.fillText(String(Math.round(state.threshold)), W-8, Math.max(12, Math.min(H-8, ty - 10)));
+    ctx.textAlign = "left";
+  }
+
+  function raf(){
+    for(const s of drums.values()) drawScope(s);
+    requestAnimationFrame(raf);
+  }
+  requestAnimationFrame(raf);
+
+  // ---------------- demo data simulator (used when no device is reachable) ----------------
+  function triggerDemoHit(s){
+    s.lastHitSeq = (s.lastHitSeq||0) + 1;
+    flashCard(s);
+  }
+  function startDemo(){
+    demoBanner.hidden = false;
+    setStatus("demo", "Demo data");
+    apInfo.textContent = "";
+    deviceStats.textContent = "";
+
+    const demoDrums = [
+      {i:0, n:"Kick", c:"#ff4d4d", th:640, r:120, f:220, am:0, as:1500, al:10, lc:60, maxAdc:4095},
+      {i:1, n:"Snare", c:"#4d9dff", th:520, r:60, f:160, am:1, as:900, al:14, lc:60, maxAdc:4095},
+    ];
+    demoDrums.forEach(d=>{
+      const {node, state} = buildCard(d);
+      grid.appendChild(node);
+      drums.set(d.i, state);
+      state._phase = Math.random()*10;
+      state._nextHit = performance.now() + 400 + Math.random()*1200;
+    });
+    presets = [];
+    templates = DEMO_TEMPLATES.map(t=>({idx:t.idx, name:t.name}));
+    buttonMap = DEMO_BUTTON_MAP.map(b=>({...b}));
+    renderPresets();
+    renderTemplates();
+    renderButtonMap();
+
+    setInterval(()=>{
+      const now = performance.now();
+      for(const s of drums.values()){
+        s._phase += 0.35;
+        let env = 40 + Math.abs(Math.sin(s._phase*0.3))*30 + (Math.random()*18);
+        let hit = false;
+        if(now >= s._nextHit){
+          env = s.threshold * (1.05 + Math.random()*0.6);
+          hit = true;
+          s._nextHit = now + 500 + Math.random()*2200;
+          triggerDemoHit(s);
+        }
+        s.history.push({t:now, env, hit});
+      }
+    }, 40);
+  }
+
+  // ---------------- real device connection ----------------
+  function wsUrl(){
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${location.host}/ws`;
+  }
+
+  function connect(){
+    if(!location.host){ startDemo(); return; }
+    setStatus("down", "Connecting…");
+    let opened = false;
+    const socket = new WebSocket(wsUrl());
+    const failTimer = setTimeout(()=>{ if(!opened){ socket.close(); startDemo(); } }, 2500);
+
+    socket.addEventListener("open", ()=>{
+      opened = true;
+      clearTimeout(failTimer);
+      ws = socket;
+      setStatus("live", "Live");
+    });
+    socket.addEventListener("message", (ev)=>{
+      let msg;
+      try{ msg = JSON.parse(ev.data); } catch(e){ return; }
+      handleServerMessage(msg);
+    });
+    socket.addEventListener("close", ()=>{
+      if(!opened) return; // handled by failTimer -> demo
+      setStatus("down", "Reconnecting…");
+      ws = null;
+      setTimeout(connect, 1500);
+    });
+  }
+
+  function handleServerMessage(msg){
+    if(msg.type === "hello"){
+      grid.innerHTML = "";
+      drums.clear();
+      msg.drums.forEach(d=>{
+        d.maxAdc = msg.maxAdc;
+        const {node, state} = buildCard(d);
+        grid.appendChild(node);
+        drums.set(d.i, state);
+      });
+      if(typeof msg.brightness === "number"){
+        brightnessInput.value = msg.brightness;
+        brightnessVal.textContent = msg.brightness;
+      }
+      if(msg.ap){ apInfo.textContent = `AP ${msg.ap.ssid} · ${msg.ap.ip}`; }
+      if(Array.isArray(msg.presets)){
+        presets = msg.presets.map(p => ({slot: p.slot, name: p.name}));
+        renderPresets();
+      }
+      if(Array.isArray(msg.templates)){
+        templates = msg.templates.map(t => ({idx: t.idx, name: t.name}));
+        renderTemplates();
+      }
+      if(Array.isArray(msg.buttons)){
+        buttonMap = msg.buttons.map(b => ({index: b.index, wired: !!b.wired, kind: b.kind, id: b.id}));
+        renderButtonMap();
+      }
+      if(msg.power) updatePowerUi(msg.power);
+    } else if(msg.type === "power"){
+      updatePowerUi(msg.power);
+    } else if(msg.type === "presets"){
+      presets = (msg.presets||[]).map(p => ({slot: p.slot, name: p.name}));
+      renderPresets();
+    } else if(msg.type === "buttons"){
+      buttonMap = (msg.buttons||[]).map(b => ({index: b.index, wired: !!b.wired, kind: b.kind, id: b.id}));
+      renderButtonMap();
+    } else if(msg.type === "tm"){
+      const now = performance.now();
+      for(const d of msg.d){
+        const s = drums.get(d.i);
+        if(!s) continue;
+        const hit = s.lastHitSeq !== null && d.h !== s.lastHitSeq;
+        if(hit) flashCard(s);
+        s.lastHitSeq = d.h;
+        s.history.push({t:now, env:d.e, hit});
+      }
+      if(typeof msg.heap === "number" || typeof msg.uptime === "number"){
+        deviceStats.textContent = `heap ${msg.heap||0}b · up ${msg.uptime||0}s`;
+      }
+    } else if(msg.type === "saved"){
+      const s = drums.get(msg.i);
+      if(s && s.node.__markSaved) s.node.__markSaved();
+    }
+  }
+
+  brightnessInput.addEventListener("input", ()=>{
+    brightnessVal.textContent = brightnessInput.value;
+    throttledSend({type:"setBrightness", v:Number(brightnessInput.value)});
+  });
+  brightnessInput.addEventListener("change", ()=>{ send({type:"commitBrightness"}); });
+
+  lightsEnabledInput.addEventListener("change", ()=>{
+    send({type:"setEnabled", v:lightsEnabledInput.checked});
+  });
+
+  connect();
+})();
+</script>
+</body>
+</html>
