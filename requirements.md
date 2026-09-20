@@ -6,24 +6,30 @@ DrumLight makes a physical drum flash an addressable RGB LED strip when it is st
 A microphone picks up the hit, firmware on an ESP32 detects the transient, and a WS2812B
 LED strip wrapped around the drum shell flashes in response. The system is designed so a
 single ESP32 can drive multiple independent drums (its own mic + its own LED strip per
-drum), even though only one or two drums will be built first.
+drum), even though only one or two drums will be built first. The ESP32 also hosts its
+own WiFi network and a browser-based control panel, so every drum's look is tunable live
+from a phone with no app, router, or internet connection required.
 
 ## 2. Goals
 
 - Low latency: visible flash within ~20 ms of a drum strike.
-- One drum working end-to-end first; adding a second/third drum is a config change, not a
-  redesign.
+- One drum working end-to-end first; adding a second/third/fourth drum is a config
+  change, not a redesign.
 - Runs from VS Code + PlatformIO, flashed over USB.
 - Power system that works today on USB for a single small test rig, with a documented,
   correct-from-the-start upgrade path to an external 5V supply once a full strip is wrapped
   around a real drum shell.
+- Live tuning and control from a phone (color, sensitivity, timing, animation, presets)
+  without a laptop, app install, or reflash — see §6.4.
 
 ## 3. Non-Goals (for v1)
 
-- No app/web UI, no WiFi control, no music/BPM sync. (Noted as future work, see §9.)
+- No music/BPM sync, no audio analysis beyond per-drum transient detection.
 - No per-hit velocity-sensitive color mapping in v1 (just on/off flash), though the
   architecture doesn't preclude it later.
 - No battery/portable power in v1 — mains-powered (wall adapter) is assumed.
+- No internet connectivity or cloud control — the ESP32's WiFi is a local access point
+  only (§6.4), by design (works at any venue, no dependency on outside network access).
 
 ## 4. Functional Requirements
 
@@ -35,9 +41,16 @@ drum), even though only one or two drums will be built first.
 | F4 | A single strike shall not cause multiple flashes (debounce/refractory period, default 120 ms). |
 | F5 | Strike sensitivity (threshold) shall be configurable per drum without rewriting logic. |
 | F6 | Flash color and LED count shall be configurable per drum. |
-| F7 | System shall support 1–6 drums on a single ESP32 (see §6.3 for why 6 is the practical ceiling), each with independent mic input and independent LED output. |
+| F7 | System shall support 1–4 drums on a single ESP32 (see §6.3 for why 4 is the ceiling), each with independent mic input and independent LED output. |
 | F8 | Each drum's detection and animation shall run independently — a hit on drum A must not delay or block drum B's detection or animation. |
 | F9 | Firmware shall cap total LED current draw (via brightness scaling) so it never exceeds the power supply's rated current, regardless of how many pixels/drums flash simultaneously. |
+| F10 | System shall support multiple animation modes per drum (flash, chase variants, rainbow, color-cycle, ember, sparkle, ripple, strobe), selectable per drum and swappable without reflashing. |
+| F11 | The ESP32 shall host its own WiFi access point and serve a browser-based control panel, reachable with no internet connection or external router. |
+| F12 | The control panel shall allow live, per-drum tuning of color, strike threshold, refractory period, flash duration, and animation mode/speed, with changes visible immediately. |
+| F13 | The control panel shall display a live per-drum envelope reading so threshold can be tuned by watching real values, not guesswork. |
+| F14 | System shall support saving/loading named presets (a snapshot of every drum's color + animation) — a fixed set of built-in templates plus at least 8 user-saved slots. |
+| F15 | System shall support an optional physical control board: a maintained power switch (kills LED output without powering down detection/WiFi), a momentary "test all drums" button, and momentary buttons that recall a preset/template — reassignable from the control panel without a reflash. |
+| F16 | All tunable settings (per-drum tuning, master brightness, lights on/off, presets, button mapping) shall persist across power cycles. |
 
 ## 5. Non-Functional Requirements
 
@@ -45,7 +58,7 @@ drum), even though only one or two drums will be built first.
 |----|-------------|
 | N1 | Firmware written in C++ using PlatformIO (Arduino framework for ESP32). |
 | N2 | No blocking `delay()` in the main loop — detection and animation are both non-blocking state machines, so timing stays correct as drum count grows. |
-| N3 | All per-drum tuning (pins, thresholds, colors, LED counts) lives in one config file/struct, not scattered through logic. |
+| N3 | All per-drum wiring (pins, LED counts) and first-boot tuning defaults live in one config file/struct, not scattered through logic; live-tuned values (thresholds, colors, timing, animation) persist to flash (NVS) and take over from those defaults once set. |
 | N4 | Wiring shall tie all grounds (ESP32, mic boards, LED PSU) together — a floating ground is the #1 cause of noisy/ghost triggers and corrupted LED data. |
 | N5 | System shall be safely expandable: adding a drum means adding one config entry + wiring, no protocol/architecture changes. |
 
@@ -65,8 +78,9 @@ drum), even though only one or two drums will be built first.
                                           hit detected?
                                                  |
                                                  v
-                                   [non-blocking flash/decay
-                                    animation state machine]
+                                   [non-blocking animation state
+                                    machine — mode selected per drum,
+                                    see §6.4]
                                                  |
                                                  v
                                    [ESP32 GPIO --(level shifter)-->
@@ -77,6 +91,10 @@ drum), even though only one or two drums will be built first.
 
    Power: 5V rail (USB or external PSU) -> ESP32 5V + LED strip 5V,
           all grounds common.
+
+   Alongside all drums: ESP32 hosts a WiFi AP + web control panel
+   (§6.4) and reads an optional physical control board (§6.5) — both
+   read/write the same live per-drum settings the animation loop uses.
 ```
 
 ### 6.2 Firmware loop model
@@ -84,31 +102,85 @@ drum), even though only one or two drums will be built first.
 - `loop()` round-robins over all configured drums every iteration (no per-drum delay).
 - Per drum: read ADC → update DC-offset tracking → rectify → low-pass into an
   "envelope" value → compare envelope to threshold → if above threshold and refractory
-  period has elapsed, trigger a hit.
+  period has elapsed, trigger a hit. The current envelope is also pushed to the web UI's
+  telemetry stream (§6.4) for live threshold tuning.
 - A hit sets that drum's animation state to "flashing" with a start timestamp; every loop
-  iteration recomputes brightness from elapsed time (attack + decay curve) — no `delay()`,
-  so multiple drums animate concurrently and independently.
+  iteration recomputes the animation purely from elapsed time (each mode has its own
+  attack/decay/sweep curve, see §6.4's animation modes) — no `delay()`, so multiple drums
+  animate concurrently and independently.
+- Reading/writing a drum's live-tuned settings (color, threshold, refractory, flash
+  duration, animation mode/speed/length) from outside the main loop (e.g. an incoming web
+  UI message) goes through a critical section, since the main loop reads the same fields
+  every iteration.
+- `webUiLoop()` and the physical control board's polling also run once per `loop()`
+  iteration, non-blocking, alongside per-drum detection/animation.
 - `FastLED.show()` is called once per loop iteration after all strips are updated, using
-  FastLED's built-in power-limiting (`setMaxPowerInVoltsAndMilliamps`) to enforce N F9.
+  FastLED's built-in power-limiting (`setMaxPowerInVoltsAndMilliamps`) to enforce N F9. A
+  master on/off (physical switch AND/OR the web UI's software toggle) forces the strips
+  dark at this final step without stopping detection/animation/WiFi underneath.
 
-### 6.3 Why max ~6 drums per ESP32
+### 6.3 Why max 4 drums per ESP32
 
-- LED outputs: FastLED's ESP32 RMT driver supports up to 8 parallel strips on 8 different
-  GPIOs — not the bottleneck.
-- Mic inputs are the real limit. The ESP32 has two ADC units: **ADC2 shares hardware with
-  WiFi** and becomes unusable/unreliable whenever WiFi is active, so all mics must go on
-  **ADC1** pins only. A typical ESP32 dev board exposes 6 ADC1-capable pins:
-  `GPIO32, 33, 34, 35, 36, 39`. That caps this design at **6 simultaneous drums** on one
-  ESP32 if WiFi is ever turned on. (If WiFi is permanently off, ADC2 pins could be added
-  for more, but that's not recommended — keep the door open for WiFi-based control later.)
-- Conclusion: build 1–2 drums now; the same firmware/wiring pattern scales to 6 without
-  redesign; beyond 6, use a second ESP32.
+- Mic inputs could go higher: the ESP32 has two ADC units, and since **ADC2 shares
+  hardware with WiFi** (unusable/unreliable once WiFi is active — and this design always
+  has WiFi on for the control panel, §6.4), all mics must go on **ADC1** pins only. A
+  typical ESP32 dev board exposes 6 ADC1-capable pins (`GPIO32, 33, 34, 35, 36, 39`), which
+  alone wouldn't force a cap below 6.
+- The actual ceiling is the LED side of the implementation: FastLED needs each strip's
+  data pin as a compile-time template parameter, so the firmware declares a fixed 4 LED
+  buffers/pin slots (`LED_PIN_0`–`LED_PIN_3`) rather than a dynamically-sized array, and
+  `NUM_DRUMS` is capped at 4 accordingly (`config.h` enforces this at compile time).
+  Supporting more would mean adding more fixed slots, not a config change.
+- Conclusion: build 1–2 drums now; the same firmware/wiring pattern scales to 4 without
+  redesign; beyond 4, use a second ESP32.
+
+### 6.4 Web control panel
+
+- The ESP32 runs as its own WiFi access point (`WIFI_AP_SSID`/`WIFI_AP_PASSWORD` in
+  `config.h`) — no router or internet needed — with a DNS captive-portal responder so
+  phones auto-prompt the control page on connect, and mDNS (`drumlight.local`) as a
+  fallback to the AP's fixed IP (`192.168.4.1`).
+- `data/index.html` is a single-file browser UI served from the ESP32's LittleFS
+  filesystem (flashed separately from firmware — see README's "Upload Filesystem Image"
+  step) and driven live over a WebSocket (JSON messages): per-drum color/threshold/
+  refractory/flash/animation editing, a live envelope graph fed by the detection loop's
+  telemetry, master brightness, "test hit" per drum, save/load/delete presets, load a
+  built-in template, and reassign physical preset buttons.
+- Any change from any source (a browser, a physical preset button, a template load)
+  re-syncs every connected browser, so multiple simultaneous clients stay consistent.
+- Animation modes (`AnimMode` in `config.h`), selectable per drum from the panel:
+  `FLASH` (classic instant-on/linear-decay), four `CHASE` variants (single/double comet
+  sweep, with an optional "persist" look where swept pixels hold solid until release),
+  `RAINBOW` and `COLORCYCLE` (continuous ambient patterns that pulse brighter on a hit),
+  and four "idle glow + hit reaction" modes that are never fully dark between hits —
+  `EMBER` (breathing glow that flares on a hit), `SPARKLE` (idle twinkle that bursts
+  denser), `RIPPLE` (a wave travels out from center to both ends), and `STROBE` (rapid
+  on/off burst instead of a smooth decay).
+- Presets (`presets.h`) snapshot every drum's color + animation (not mic tuning, which is
+  per-hardware) into one named slot: 5 read-only built-in templates baked into firmware
+  (`PRESET_TEMPLATES` in `config.h`), plus up to `MAX_PRESETS` (8) user-saved slots in
+  NVS, editable/deletable from the panel.
+
+### 6.5 Physical control board (optional)
+
+- A maintained power switch (`POWER_SWITCH_PIN`) that forces every strip dark while
+  leaving detection, animation state, and WiFi/UI running underneath — flipping it back
+  on resumes instantly rather than rebooting anything.
+- A momentary "test all" button (`GLOBAL_TEST_BUTTON_PIN`) that fires every configured
+  drum through the same trigger path as a real hit.
+- Up to `MAX_PRESET_BUTTONS` (5) momentary buttons, each mapped to a built-in template or
+  a saved preset. The mapping starts from a compile-time default (`PRESET_BUTTON_DEFAULTS`)
+  but is reassignable live from the web UI's Buttons panel and persists to NVS, so a
+  reflash never undoes a live reassignment.
+- All inputs are active-low with the ESP32's internal pull-ups (no external resistors)
+  and software-debounced (30 ms). Any pin can be set to `NO_PIN` to leave that control
+  unwired without affecting the rest of the board.
 
 ## 7. Hardware & Bill of Materials
 
 | Component | Notes |
 |-----------|-------|
-| ESP32 dev board (e.g. ESP32-DevKitC / NodeMCU-32S) | 1 per group of up to 6 drums |
+| ESP32 dev board (e.g. ESP32-DevKitC / NodeMCU-32S) | 1 per group of up to 4 drums |
 | MAX4466 electret mic amp module (with adjustable gain pot) | 1 per drum |
 | WS2812B addressable RGB LED strip | length per drum = however much wraps the shell |
 | External 5V PSU (5V, current per §8) | shared, once beyond USB-safe current (see §8) |
@@ -117,6 +189,8 @@ drum), even though only one or two drums will be built first.
 | 1000 µF electrolytic capacitor, ≥6.3V rating | 1 per LED strip, across 5V/GND at strip input |
 | Wire (mic leads thin ok; LED power leads thick, see §8.3) | |
 | Common ground bus / terminal block | ties ESP32 GND, mic GNDs, PSU GND together |
+| Maintained SPST switch (optional) | power/lighting on-off, see §6.5 |
+| Momentary push buttons, up to 6 (optional) | 1 global test-all + up to 5 preset-recall, see §6.5 |
 
 ## 8. Power Design
 
@@ -187,13 +261,16 @@ and input capacitor (§7), this is the standard "make WS2812B reliable" recipe.
 
 ## 9. Future Expansion (out of scope now, but designed for)
 
-- WiFi/BLE control of thresholds/colors from a phone (would need to keep drums on ADC1 as
-  designed, see §6.3).
+WiFi control, live web tuning, NVS-persisted settings, and per-drum animation modes
+beyond flash+decay were originally future work here — all shipped, see §6.4. Remaining
+ideas, out of scope for now but not precluded by the current design:
+
 - Velocity-sensitive color/brightness mapping from envelope peak amplitude.
-- Per-drum animation patterns beyond flash+decay (chase, rainbow, etc.) — the animation
-  state machine is already isolated per drum so this is additive.
-- Persisting per-drum config (thresholds/colors) to flash (NVS/Preferences) instead of
-  hardcoded constants.
+- BLE control as an alternative to the WiFi AP (e.g. for venues with WiFi congestion).
+- Authentication/PIN on the web UI (currently open once connected to the AP — fine for
+  a private/trusted event WiFi, not for a network anyone can join).
+- Scaling past 4 drums by adding a second ESP32 rather than redesigning this one (see
+  §6.3 for why 4 is this board's ceiling).
 
 ## 10. Risks / Open Questions
 
@@ -205,3 +282,6 @@ and input capacitor (§7), this is the standard "make WS2812B reliable" recipe.
   gain not maxed out); revisit if it's a real problem once built.
 - Exact LED count per drum isn't finalized — PSU sizing in §8.1 should be revisited once
   actual strip lengths are known.
+- `WIFI_AP_PASSWORD` defaults to a weak placeholder (`"drumlight"`) and the control panel
+  has no login once connected — fine for a bench/rehearsal WiFi, but change the password
+  (see `config.h`) before using this anywhere the network is reachable by untrusted people.
